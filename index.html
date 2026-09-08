@@ -83,7 +83,7 @@
   .vs .chip{font-size:20px; padding:7px 11px}
   .vs .cap{color:var(--muted); font-size:11.5px; letter-spacing:.05em; font-weight:500}
 
-  /* ---- שורת "מרגיש כמו" ---- */
+  /* ---- "feels like" row ---- */
   .feels{
     background:var(--card); border:1px solid var(--line); border-radius:16px;
     padding:13px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px;
@@ -147,27 +147,27 @@
 
 <div class="wrap" id="app"><div class="msg"><div class="spin"></div>רגע, בודק…</div></div>
 
-<div class="sheet" id="sheet">
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTtl">
   <div class="box">
-    <h2>איפה אתה?</h2>
-    <input id="q" type="search" placeholder="תל אביב, חיפה, ברלין…" autocomplete="off" enterkeyhint="search">
+    <h2 id="sheetTtl">איפה אתה?</h2>
+    <input id="q" type="search" aria-label="חיפוש עיר" placeholder="תל אביב, חיפה, ברלין…" autocomplete="off" enterkeyhint="search">
     <button class="geobtn" id="useGeo">📍 השתמש במיקום שלי</button>
     <div class="lbl" id="recentLbl" hidden>אחרונים</div>
-    <div class="recent" id="recent"></div>
-    <div class="results" id="res"></div>
-    <div class="hint" id="hint"></div>
+    <div class="recent" id="recent" role="group" aria-label="ערים אחרונות"></div>
+    <div class="results" id="res" role="group" aria-label="תוצאות חיפוש" aria-live="polite"></div>
+    <div class="hint" id="hint" role="status"></div>
     <button class="close" id="closeSheet">ביטול</button>
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 (() => {
 'use strict';
 
 /* ============================================================
-   1. סולם ההפרש בטמפרטורה בפועל
+   1. Verdict scale, keyed to the actual temperature delta
    ============================================================ */
 const SCALE = [
   { min: 8,         emoji:'🔥🔥', glow:'#ff4d2e', texts:[
@@ -219,33 +219,63 @@ function context(now){
 }
 
 /* ============================================================
-   2. פער ה"מרגיש כמו" — כשהטמפרטורה והגוף לא מסכימים
+   2. The "feels like" gap — when the temperature and the body disagree
    ------------------------------------------------------------
-   gap = (הפרש המורגש) פחות (הפרש בפועל).
-   חיובי  = הלחות/הרוח מחמירות את המצב יחסית לשנה שעברה.
-   שלילי  = האוויר יבש יותר, אז המספר מטעה לרעה.
+   gap = (felt delta) minus (actual delta).
+   Positive = the body suffers more than the number admits. Negative = the reverse.
+
+   apparent_temperature folds humidity, wind and solar radiation into
+   a single number, so it alone cannot tell you which of the three is
+   to blame. We used to blame humidity every time — that was a guess
+   delivered with unearned confidence. Now we fetch relative_humidity_2m
+   for both dates (one extra field on the same two requests, no third
+   request) and name humidity only when it actually moved in the
+   direction that explains the gap. Otherwise we describe the sensation
+   without inventing a cause for it.
    ============================================================ */
-function feelsGap(dReal, dFeel){
+const RH_SURE = 8;    /* Under 8 percentage points is noise, not a trend */
+const RH_WARM = 20;   /* Below 20° humidity barely enters perceived heat, so we do not blame it */
+
+function feelsGap(d, dReal, dFeel){
   const gap = dFeel - dReal;
   if (Math.abs(gap) < 2) return null;
 
+  /* Up to 1.4° the delta is still visible on screen, so "exactly" would contradict the number beside it */
   const same = Math.abs(dReal) < 1.5;
+  const dRH  = (d.nowRH == null || d.thenRH == null) ? null : d.nowRH - d.thenRH;
+  const rh   = n => `<span dir="ltr">${Math.round(n)}%</span>`;
+  const from = () => `מ-${rh(d.thenRH)} ל-${rh(d.nowRH)}`;
+  const know = dRH != null && d.now >= RH_WARM;   /* Are we allowed to name humidity? */
+
   if (gap >= 2) {
-    return { tone:'#ff8a3d', texts: same ? [
-        '<b>אותה טמפרטורה בדיוק</b> — אבל האוויר כבד יותר. הלחות עלתה, והגוף יודע.',
-        '<b>אותה טמפרטורה, הרגשה אחרת לגמרי.</b> זה מה שלחות עושה.',
+    return { tone:'#ff8a3d', texts: know && dRH >= RH_SURE ? (same ? [
+        `<b>אותה טמפרטורה, פחות או יותר</b> — אבל הלחות עלתה ${from()}. הגוף לא מתווכח עם המספר, הוא מתווכח עם האוויר.`,
+        `<b>המספר זהה, ההרגשה לא.</b> הלחות טיפסה ${from()}, וזה חלק גדול מההבדל.`,
       ] : [
-        'ולא רק זה — <b>הלחות מחריפה את זה</b>. הטמפרטורה לבדה היא רק חצי מהסיפור.',
-        'הטמפרטורה לא מספרת הכל: <b>האוויר כבד יותר משנה שעברה</b>, ולכן זה מרגיש גרוע יותר.',
-      ]};
+        `ולא רק זה — <b>הלחות עלתה ${from()}</b>, אז זה מרגיש אפילו יותר גרוע ממה שכתוב.`,
+        `הטמפרטורה היא חצי מהסיפור: <b>האוויר לח יותר משנה שעברה</b> (${from()}), והחצי השני נדבק לחולצה.`,
+      ]) : (same ? [
+        '<b>אותה טמפרטורה, פחות או יותר</b> — ובכל זאת האוויר מרגיש כבד יותר. רוח, שמש או לחות; משהו שם עובד נגדך.',
+        '<b>המספר זהה, התחושה גרועה יותר.</b> לא הכל נכנס למד החום.',
+      ] : [
+        'ולא רק זה — <b>זה גם מרגיש גרוע יותר ממה שהמספר מודה</b>. הרוח, השמש והלחות עושות את שלהן.',
+        'והגוף מקצין את זה עוד: <b>ההרגשה בפועל גרועה מהמספר היבש</b>.',
+      ])};
   }
-  return { tone:'#5bc0d8', texts: same ? [
-      '<b>אותה טמפרטורה</b>, אבל האוויר יבש יותר — אז זה מרגיש קליל יותר משנה שעברה.',
-      'הטמפרטורה זהה, אבל <b>הגוף ירגיש טוב יותר</b>. פחות לחות.',
+
+  return { tone:'#5bc0d8', texts: know && dRH <= -RH_SURE ? (same ? [
+      `<b>אותה טמפרטורה, פחות או יותר</b>, אבל הלחות ירדה ${from()} — אז זה מרגיש קליל בהרבה.`,
+      `המספר זהה, <b>הגוף ירגיש טוב יותר</b>: פחות לחות באוויר (${from()}).`,
     ] : [
-      'אבל <b>יבש יותר</b> משנה שעברה, אז בפועל זה נסבל הרבה יותר ממה שהטמפרטורה מרמזת.',
-      'הטמפרטורה מגזימה: <b>הלחות ירדה</b>, וזה משנה את כל התחושה.',
-    ]};
+      `ו<b>יבש יותר משנה שעברה</b> — הלחות ירדה ${from()}, אז בפועל זה נסבל הרבה יותר ממה שהטמפרטורה מרמזת.`,
+      `הטמפרטורה מגזימה: <b>הלחות ירדה ${from()}</b>, וזה משנה את כל התחושה.`,
+    ]) : (same ? [
+      '<b>אותה טמפרטורה, פחות או יותר</b> — ובכל זאת האוויר מרגיש נוח יותר. משהו שם עובד לטובתך.',
+      '<b>המספר זהה, ההרגשה טובה יותר.</b> תיהנה, אל תשאל.',
+    ] : [
+      'אבל <b>זה מרגיש נעים יותר ממה שהמספר מבטיח</b> — הרוח והשמש גם משתתפות בחישוב.',
+      'והתחושה בפועל טובה מהמספר: <b>לא הכל נמדד במעלות</b>.',
+    ])};
 }
 
 function pick(arr, seed){
@@ -258,15 +288,16 @@ const WMO = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️'
   61:'🌧️',63:'🌧️',65:'🌧️',71:'🌨️',73:'🌨️',75:'❄️',80:'🌦️',81:'🌧️',82:'⛈️',95:'⛈️',96:'⛈️',99:'⛈️'};
 
 /* ============================================================
-   3. עזרים
+   3. Helpers
    ============================================================ */
 const $ = s => document.querySelector(s);
 
-/* כל מחרוזת ממקור חיצוני — שם עיר מה-API, פרמטר מהכתובת, הודעת שגיאה —
-   עוברת דרך כאן לפני שהיא נוגעת ב-innerHTML. בלי זה, קישור משותף
-   עם name=<img onerror=...> מריץ קוד זר על הדומיין שלנו. */
-/* חוסמי פרסומות חוסמים את הסקריפט של Umami לעתים קרובות.
-   העטיפה מוודאת שהאפליקציה לא נשברת כשהוא לא נטען. */
+/* Every string from an external source — a city name from the API, a URL
+   parameter, an error message — goes through here before it touches
+   innerHTML. Without it, a shared link carrying name=<img onerror=...>
+   runs foreign code on our own origin. */
+/* Ad blockers frequently block the Umami script. This wrapper keeps the
+   app working when it fails to load. */
 const track = (name, data) => { try { window.umami?.track(name, data); } catch(e){} };
 
 const ESC = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
@@ -288,16 +319,29 @@ const fmtD = d => `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d).toFixed(1)}�
 
 function lastYear(d){
   const y = d.getFullYear() - 1, m = d.getMonth(), day = d.getDate();
-  const safe = (m === 1 && day === 29) ? 28 : day;   // 29.2 לא קיים בכל שנה
+  const safe = (m === 1 && day === 29) ? 28 : day;   // Feb 29 does not exist every year
   return `${y}-${pad(m+1)}-${pad(safe)}`;
 }
 const heDate = d => d.toLocaleDateString('he-IL',{day:'numeric',month:'long'});
 
-async function getJSON(url){
-  const r = await fetch(url);
+async function getJSON(url, signal){
+  const r = await fetch(url, { signal });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
+
+/* ------------------------------------------------------------
+   Request races: every request here is exactly as slow as the network
+   decides, and any screen painted from a stale response is a lying
+   screen. Two guards:
+   gen — a counter of location picks, which orphans a GPS lookup the
+         user has already overtaken with a manual choice; and an
+         AbortController per request kind, which both cancels the
+         request itself and marks which request is the current one.
+   ------------------------------------------------------------ */
+let gen = 0, loadAC = null, geoAC = null, searchAC = null;
+const stop = ac => { if (ac) ac.abort(); return null; };
+const quiet = e => e && e.name === 'AbortError';   /* A deliberate abort — not an error worth showing */
 
 function toast(title, body){
   const t = $('#toast');
@@ -307,9 +351,11 @@ function toast(title, body){
 }
 
 /* ============================================================
-   4. שליפת הנתונים
+   4. Fetching the data
    ============================================================ */
 async function load(place){
+  loadAC = stop(loadAC);                 /* An earlier load still in flight is no longer interesting */
+  const ac = loadAC = new AbortController();
   app.innerHTML = '<div class="msg"><div class="spin"></div>רגע, בודק…</div>';
   const { lat, lon, name } = place;
   const q = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&timezone=auto`;
@@ -317,7 +363,7 @@ async function load(place){
   try {
     const now = await getJSON(
       `https://api.open-meteo.com/v1/forecast?${q}` +
-      `&current=temperature_2m,apparent_temperature,weather_code`);
+      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code`, ac.signal);
 
     const localNow = new Date(now.current.time);
     const hour = localNow.getHours();
@@ -326,36 +372,40 @@ async function load(place){
     const past = await getJSON(
       `https://archive-api.open-meteo.com/v1/archive?${q}` +
       `&start_date=${date}&end_date=${date}` +
-      `&hourly=temperature_2m,apparent_temperature`);
+      `&hourly=temperature_2m,apparent_temperature,relative_humidity_2m`, ac.signal);
 
     const i = past.hourly.time.findIndex(t => t.endsWith(`T${pad(hour)}:00`));
     if (i < 0 || past.hourly.temperature_2m[i] == null) throw new Error('אין נתונים לתאריך הזה');
+    if (loadAC !== ac) return;           /* A different place was picked meanwhile — do not overwrite it */
 
     DATA = {
       lat, lon, name, hour, localNow,
       now:      now.current.temperature_2m,
       nowFeel:  now.current.apparent_temperature,
+      nowRH:    now.current.relative_humidity_2m ?? null,
       code:     now.current.weather_code,
       then:     past.hourly.temperature_2m[i],
       thenFeel: past.hourly.apparent_temperature[i],
+      thenRH:   past.hourly.relative_humidity_2m?.[i] ?? null,
       seed: `${lat.toFixed(2)},${lon.toFixed(2)},${localNow.toDateString()}`,
     };
     render();
   } catch (e) {
+    if (quiet(e) || loadAC !== ac) return;
     app.innerHTML = `<div class="msg fade">משהו השתבש 🤷<br><small style="opacity:.7">${esc(e.message)}</small><br><br>
       <button class="geobtn" style="max-width:220px;margin:0 auto" onclick="location.reload()">נסה שוב</button></div>`;
   }
 }
 
 /* ============================================================
-   5. תצוגה
+   5. Render
    ============================================================ */
 function render(){
   const d = DATA;
   const dReal = d.now - d.then;
   const dFeel = d.nowFeel - d.thenFeel;
   const level = SCALE.find(s => dReal >= s.min);
-  const gap   = feelsGap(dReal, dFeel);
+  const gap   = feelsGap(d, dReal, dFeel);
 
   document.body.style.setProperty('--glow', `radial-gradient(125% 85% at 50% 0%, ${level.glow}30, transparent 68%)`);
   document.body.style.setProperty('--chipBg', level.glow + '26');
@@ -411,7 +461,7 @@ function render(){
           <button class="pill primary" id="share">שלח את זה למישהו שמתלונן ←</button>
         </div>
         אותו מקום, אותו תאריך, אותה שעה — רק שנה אחת אחורה.<br>
-        נתונים: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> · ERA5
+        נתונים: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> · ארכיון ECMWF
       </div>
     </div>`;
 
@@ -420,22 +470,24 @@ function render(){
 }
 
 /* ============================================================
-   6. שיתוף — הקישור פותח את אותו מקום בדיוק
+   6. Sharing — the link opens the exact same place
    ============================================================ */
 function shareURL(){
   const d = DATA;
-  /* 2 ספרות ≈ 1.1 ק"מ. ב-4 ספרות (≈11 מטר) שיתוף ממיקום GPS
-     היה חושף את כתובת הבית. ממילא רשת ERA5 היא 25 ק"מ, אז זו
-     הייתה דיוק מדומה — הוויתור על הפרטיות היה בחינם. */
+  /* 2 decimals is about 1.1 km. At 4 decimals (about 11 m) sharing from a
+     GPS fix would hand out your home address. The archive grid cell is
+     9 km or coarser anyway, so that was imaginary precision — the privacy
+     we gave up bought us nothing. */
   return `${location.origin}${location.pathname}` +
     `?lat=${d.lat.toFixed(2)}&lon=${d.lon.toFixed(2)}&name=${encodeURIComponent(d.name)}`;
 }
 
-/* פיתיון, לא דוח. בלי מספרים — המספרים הם הסיבה ללחוץ,
-   ואם הם כבר בהודעה אין סיבה להיכנס.
-   כל נוסח מעגן את עצמו במזג אוויר, אחרת ההודעה חסרת הקשר בוואטסאפ.
-   כולם ניטרליים בכוונה ("מזג האוויר" ולא "חם יותר"), כי התשובה
-   יכולה להיות גם "קר יותר" וגם "אותו דבר". */
+/* Bait, not a report. No numbers — the numbers are the reason to click,
+   and if they are already in the message there is no reason to open it.
+   Every variant anchors itself in weather, otherwise the message lands
+   in WhatsApp with no context at all. All of them are deliberately
+   neutral ("the weather" rather than "hotter"), because the answer can
+   just as easily be "colder" or "the same". */
 function shareTexts(){
   const c = DATA.name;
   return [
@@ -450,7 +502,7 @@ function shareTexts(){
   ];
 }
 
-/* בכל לחיצה נוסח אחר, ואף פעם לא אותו אחד פעמיים ברצף */
+/* A different variant on every click, and never the same one twice in a row */
 let lastShare = -1;
 function rollText(){
   const list = shareTexts();
@@ -461,7 +513,7 @@ function rollText(){
   return { text: list[i], i };
 }
 
-/* גיבוי לדפדפנים ישנים שבהם navigator.clipboard לא זמין */
+/* Fallback for older browsers where navigator.clipboard is unavailable */
 function legacyCopy(str){
   const ta = document.createElement('textarea');
   ta.value = str;
@@ -475,12 +527,13 @@ function legacyCopy(str){
   return ok;
 }
 
-/* מעתיק ישירות ללוח. במכוון בלי navigator.share — במחשב הוא פותח
-   את תפריט השיתוף של המערכת, וזה חיכוך מיותר במקום פעולה אחת. */
+/* Copies straight to the clipboard. Deliberately not navigator.share — on
+   desktop it opens the OS share sheet, which is friction where one action
+   would do. */
 function share(){
   const { text, i } = rollText(), payload = `${text}\n${shareURL()}`;
   track('share_click', { variant: i });
-  /* variant מאפשר לראות איזה נוסח באמת גורם לאנשים לשתף */
+  /* variant lets us see which wording actually makes people share */
   const done = () => { track('share_copied', { variant: i }); toast('הועתק ✓', text); };
   const fail = () => { track('share_failed', { variant: i }); toast('לא הצלחתי להעתיק', 'נסה שוב'); };
 
@@ -492,7 +545,7 @@ function share(){
 }
 
 /* ============================================================
-   7. בחירת מיקום
+   7. Location picking
    ============================================================ */
 function remember(p){
   ls.set(KEY, p);
@@ -507,34 +560,79 @@ function drawRecent(){
   $('#recent').innerHTML = list.map((p, i) =>
     `<button data-i="${i}">${esc(p.name)}</button>`).join('');
   $('#recent').querySelectorAll('button').forEach(b => b.onclick = () => {
-    const p = ls.get(KEY_R, [])[+b.dataset.i];
-    remember(p); closeSheet(); load(p);
+    choose(ls.get(KEY_R, [])[+b.dataset.i]);
   });
 }
 
-function openSheet(){ drawRecent(); sheet.classList.add('on'); $('#q').focus(); }
-function closeSheet(){ sheet.classList.remove('on'); $('#res').innerHTML=''; $('#q').value=''; $('#hint').textContent=''; }
+/* The single gate for picking a location. It advances gen, so any GPS
+   lookup still in flight loses its right to paint the screen here. */
+function choose(p){
+  gen++;
+  geoAC = stop(geoAC);
+  remember(p); closeSheet(); load(p);
+}
+
+/* The dialog is modal: focus moves inside, cannot escape via Tab, and
+   returns at the end to the button that opened it. Without this a
+   keyboard user "leaves" the sheet without closing it and keeps
+   wandering the page behind it. */
+const FOCUSABLE = 'button, input, [href], [tabindex]:not([tabindex="-1"])';
+let lastFocus = null;
+
+function openSheet(){
+  lastFocus = document.activeElement;
+  drawRecent();
+  sheet.classList.add('on');
+  app.inert = true;               /* Take the background out of the keyboard and screen-reader path */
+  $('#q').focus();
+}
+function closeSheet(){
+  sheet.classList.remove('on');
+  app.inert = false;
+  clearTimeout(timer);
+  searchAC = stop(searchAC);
+  $('#res').innerHTML=''; $('#q').value=''; $('#hint').textContent='';
+  /* render() replaces the contents of #app, so the button that opened us may no longer be in the document */
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  lastFocus = null;
+}
 $('#closeSheet').onclick = closeSheet;
 sheet.onclick = e => { if (e.target === sheet) closeSheet(); };
+
+addEventListener('keydown', e => {
+  if (!sheet.classList.contains('on')) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeSheet(); return; }
+  if (e.key !== 'Tab') return;
+  const f = [...sheet.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
 
 let timer;
 $('#q').oninput = e => {
   clearTimeout(timer);
+  searchAC = stop(searchAC);      /* Not just the timer — also a request that already left */
   const v = e.target.value.trim();
   if (v.length < 2) { $('#res').innerHTML=''; return; }
   timer = setTimeout(async () => {
+    const ac = searchAC = new AbortController();
     try {
       const r = await getJSON(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(v)}&count=6&language=he`);
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(v)}&count=6&language=he`, ac.signal);
+      if (searchAC !== ac) return;
       $('#res').innerHTML = (r.results || []).map(x =>
         `<button data-lat="${+x.latitude}" data-lon="${+x.longitude}" data-name="${esc(x.name)}">
            ${esc(x.name)} <small>${esc([x.admin1, x.country].filter(Boolean).join(', '))}</small></button>`).join('')
         || '<div class="hint">לא נמצא. נסה איות אחר.</div>';
       $('#res').querySelectorAll('button').forEach(b => b.onclick = () => {
-        const p = { lat:+b.dataset.lat, lon:+b.dataset.lon, name:b.dataset.name };
-        remember(p); closeSheet(); load(p);
+        choose({ lat:+b.dataset.lat, lon:+b.dataset.lon, name:b.dataset.name });
       });
-    } catch(e){ $('#res').innerHTML = '<div class="hint">החיפוש לא זמין כרגע.</div>'; }
+    } catch(e){
+      if (quiet(e) || searchAC !== ac) return;
+      $('#res').innerHTML = '<div class="hint">החיפוש לא זמין כרגע.</div>';
+    }
   }, 260);
 };
 
@@ -543,27 +641,35 @@ $('#useGeo').onclick = () => locate(true);
 function locate(explicit){
   if (!navigator.geolocation) { openSheet(); return; }
   $('#hint').textContent = 'מבקש מיקום…';
+  /* The location prompt can take many seconds. If the user lost patience
+     meanwhile and picked a city by hand, gen has already advanced and
+     this answer is dead. */
+  const my = ++gen;
   navigator.geolocation.getCurrentPosition(async pos => {
+    if (my !== gen) return;
     const lat = pos.coords.latitude, lon = pos.coords.longitude;
     let name = 'המיקום שלך';
+    const ac = geoAC = new AbortController();
     try {
       const g = await getJSON(
-        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=he`);
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=he`, ac.signal);
       name = g.city || g.locality || g.principalSubdivision || name;
-    } catch(e){}
-    const p = { lat, lon, name };
-    remember(p); closeSheet(); load(p);
+    } catch(e){ if (quiet(e)) return; }
+    if (my !== gen) return;
+    choose({ lat, lon, name });
   }, () => {
+    if (my !== gen) return;
     $('#hint').textContent = 'אין גישה למיקום — חפש עיר ידנית.';
     if (!explicit) openSheet();
   }, { timeout: 9000, maximumAge: 600000 });
 }
 
 /* ============================================================
-   8. התחלה — קישור משותף גובר על הכל
+   8. Bootstrap — a shared link wins over everything
    ============================================================ */
-/* פרמטרים מקישור משותף הם קלט של תוקף פוטנציאלי — מאמתים טווח,
-   חותכים אורך, ומשאירים את הבריחה מ-HTML ל-esc() בשלב התצוגה. */
+/* Parameters from a shared link are potential attacker input — we validate
+   the range, cap the length, and leave HTML escaping to esc() at render
+   time. */
 function fromURL(){
   const u = new URLSearchParams(location.search);
   if (!u.has('lat') || !u.has('lon')) return null;
@@ -577,7 +683,7 @@ const shared = fromURL();
 
 if (shared) {
   remember(shared);
-  history.replaceState(null, '', location.pathname);   // ניקוי הכתובת
+  history.replaceState(null, '', location.pathname);   // clean up the address bar
   load(shared);
 } else {
   const s = ls.get(KEY, null);
