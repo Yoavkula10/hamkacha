@@ -233,8 +233,15 @@ function context(now){
    direction that explains the gap. Otherwise we describe the sensation
    without inventing a cause for it.
    ============================================================ */
-const RH_SURE = 8;    /* Under 8 percentage points is noise, not a trend */
-const RH_WARM = 20;   /* Below 20° humidity barely enters perceived heat, so we do not blame it */
+/* Editorial thresholds, not physics. apparent_temperature blends temperature,
+   humidity, wind and solar radiation into a single number, so nothing here
+   can isolate humidity's share of the gap — which is why the copy below
+   reports humidity as an accompanying observation and never as the cause.
+   These two values only decide when mentioning it is interesting enough to
+   earn a line: a smaller move reads as noise, and in cold air the reader
+   will not feel it either way. */
+const RH_SURE = 8;    /* percentage points */
+const RH_WARM = 20;   /* °C */
 
 function feelsGap(d, dReal, dFeel){
   const gap = dFeel - dReal;
@@ -249,11 +256,11 @@ function feelsGap(d, dReal, dFeel){
 
   if (gap >= 2) {
     return { tone:'#ff8a3d', texts: know && dRH >= RH_SURE ? (same ? [
-        `<b>אותה טמפרטורה, פחות או יותר</b> — אבל הלחות עלתה ${from()}. הגוף לא מתווכח עם המספר, הוא מתווכח עם האוויר.`,
-        `<b>המספר זהה, ההרגשה לא.</b> הלחות טיפסה ${from()}, וזה חלק גדול מההבדל.`,
+        `<b>אותה טמפרטורה, פחות או יותר</b> — אבל מרגיש חם יותר. הלחות גם עלתה ${from()}.`,
+        `<b>המספר זהה, ההרגשה לא.</b> הלחות, אגב, גבוהה יותר: ${from()}.`,
       ] : [
-        `ולא רק זה — <b>הלחות עלתה ${from()}</b>, אז זה מרגיש אפילו יותר גרוע ממה שכתוב.`,
-        `הטמפרטורה היא חצי מהסיפור: <b>האוויר לח יותר משנה שעברה</b> (${from()}), והחצי השני נדבק לחולצה.`,
+        `ולא רק זה — <b>גם מרגיש גרוע יותר ממה שכתוב</b>. הלחות עלתה ${from()}.`,
+        `<b>הטמפרטורה היא חצי מהסיפור.</b> האוויר גם לח יותר משנה שעברה, ${from()}.`,
       ]) : (same ? [
         '<b>אותה טמפרטורה, פחות או יותר</b> — ובכל זאת האוויר מרגיש כבד יותר. רוח, שמש או לחות; משהו שם עובד נגדך.',
         '<b>המספר זהה, התחושה גרועה יותר.</b> לא הכל נכנס למד החום.',
@@ -264,11 +271,11 @@ function feelsGap(d, dReal, dFeel){
   }
 
   return { tone:'#5bc0d8', texts: know && dRH <= -RH_SURE ? (same ? [
-      `<b>אותה טמפרטורה, פחות או יותר</b>, אבל הלחות ירדה ${from()} — אז זה מרגיש קליל בהרבה.`,
-      `המספר זהה, <b>הגוף ירגיש טוב יותר</b>: פחות לחות באוויר (${from()}).`,
+      `<b>אותה טמפרטורה, פחות או יותר</b>, אבל מרגיש קליל יותר. הלחות גם ירדה ${from()}.`,
+      `המספר זהה, <b>ההרגשה טובה יותר</b>. הלחות, אגב, נמוכה יותר: ${from()}.`,
     ] : [
-      `ו<b>יבש יותר משנה שעברה</b> — הלחות ירדה ${from()}, אז בפועל זה נסבל הרבה יותר ממה שהטמפרטורה מרמזת.`,
-      `הטמפרטורה מגזימה: <b>הלחות ירדה ${from()}</b>, וזה משנה את כל התחושה.`,
+      `וגם <b>מרגיש נסבל יותר ממה שהטמפרטורה מרמזת</b>. הלחות ירדה ${from()}.`,
+      `<b>הטמפרטורה מגזימה.</b> האוויר גם יבש יותר משנה שעברה, ${from()}.`,
     ]) : (same ? [
       '<b>אותה טמפרטורה, פחות או יותר</b> — ובכל זאת האוויר מרגיש נוח יותר. משהו שם עובד לטובתך.',
       '<b>המספר זהה, ההרגשה טובה יותר.</b> תיהנה, אל תשאל.',
@@ -309,7 +316,27 @@ const KEY = 'hamkacha.place', KEY_R = 'hamkacha.recent';
 const ls = {
   get(k, d){ try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch(e){ return d; } },
   set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+  del(k){ try { localStorage.removeItem(k); } catch(e){} },
 };
+
+/* localStorage is durable, user-editable, and may hold values written by an
+   older version of this app; a shared link is outright attacker input. Every
+   place object entering the app passes through here, so nothing downstream
+   has to wonder whether lat is a number. Returns null rather than throwing:
+   a bad place is a place we do not have, not a crash. */
+function normalizePlace(v){
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const lat = Number(v.lat), lon = Number(v.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  const name = typeof v.name === 'string' ? v.name.trim().slice(0, 60) : '';
+  return { lat, lon, name: name || 'המקום הזה' };
+}
+
+/* A field that is absent, null, or non-numeric must not reach arithmetic:
+   null quietly coerces to 0 and would render a believable but invented
+   comparison. Required fields fail the load; optional ones just go missing. */
+const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
 
 let DATA = null;
 
@@ -324,10 +351,32 @@ function lastYear(d){
 }
 const heDate = d => d.toLocaleDateString('he-IL',{day:'numeric',month:'long'});
 
-async function getJSON(url, signal){
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return r.json();
+/* An AbortController only cancels a request once another request supersedes
+   it. Nothing supersedes a stalled connection, so without a deadline the
+   spinner can run forever with no way out. */
+const TIMEOUT_MS = 12000;
+
+async function getJSON(url, signal, ms = TIMEOUT_MS){
+  const ac = new AbortController();
+  const relay = () => ac.abort();
+  if (signal) {
+    if (signal.aborted) ac.abort();
+    else signal.addEventListener('abort', relay, { once: true });
+  }
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ac.abort(); }, ms);
+  try {
+    const r = await fetch(url, { signal: ac.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (e) {
+    /* Both cases surface as AbortError, but only one of them is deliberate. */
+    if (timedOut) throw new Error('הבקשה לקחה יותר מדי זמן');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', relay);
+  }
 }
 
 /* ------------------------------------------------------------
@@ -357,15 +406,25 @@ async function load(place){
   loadAC = stop(loadAC);                 /* An earlier load still in flight is no longer interesting */
   const ac = loadAC = new AbortController();
   app.innerHTML = '<div class="msg"><div class="spin"></div>רגע, בודק…</div>';
-  const { lat, lon, name } = place;
-  const q = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&timezone=auto`;
 
   try {
+    /* Everything that can throw lives inside the try, so a bad place shows
+       the error screen with a way out instead of a dead spinner. */
+    const at = normalizePlace(place);
+    if (!at) throw new Error('המיקום השמור לא תקין');
+    const { lat, lon, name } = at;
+    const q = `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&timezone=auto`;
+
     const now = await getJSON(
       `https://api.open-meteo.com/v1/forecast?${q}` +
       `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code`, ac.signal);
 
-    const localNow = new Date(now.current.time);
+    const cur = now && now.current;
+    const localNow = new Date(cur ? cur.time : NaN);
+    if (!cur || isNaN(localNow)) throw new Error('חסרים נתונים על עכשיו');
+    const nowT = num(cur.temperature_2m), nowF = num(cur.apparent_temperature);
+    if (nowT == null || nowF == null) throw new Error('חסרים נתונים על עכשיו');
+
     const hour = localNow.getHours();
     const date = lastYear(localNow);
 
@@ -374,26 +433,40 @@ async function load(place){
       `&start_date=${date}&end_date=${date}` +
       `&hourly=temperature_2m,apparent_temperature,relative_humidity_2m`, ac.signal);
 
-    const i = past.hourly.time.findIndex(t => t.endsWith(`T${pad(hour)}:00`));
-    if (i < 0 || past.hourly.temperature_2m[i] == null) throw new Error('אין נתונים לתאריך הזה');
+    const h = past && past.hourly;
+    const i = Array.isArray(h && h.time)
+      ? h.time.findIndex(t => typeof t === 'string' && t.endsWith(`T${pad(hour)}:00`))
+      : -1;
+    if (i < 0) throw new Error('אין נתונים לתאריך הזה');
+    const thenT = num(h.temperature_2m?.[i]), thenF = num(h.apparent_temperature?.[i]);
+    if (thenT == null || thenF == null) throw new Error('אין נתונים לתאריך הזה');
     if (loadAC !== ac) return;           /* A different place was picked meanwhile — do not overwrite it */
+
+    /* Humidity is optional: without it the copy drops the humidity line
+       rather than the whole comparison. */
+    const rhOK = v => { const n = num(v); return (n != null && n >= 0 && n <= 100) ? n : null; };
 
     DATA = {
       lat, lon, name, hour, localNow,
-      now:      now.current.temperature_2m,
-      nowFeel:  now.current.apparent_temperature,
-      nowRH:    now.current.relative_humidity_2m ?? null,
-      code:     now.current.weather_code,
-      then:     past.hourly.temperature_2m[i],
-      thenFeel: past.hourly.apparent_temperature[i],
-      thenRH:   past.hourly.relative_humidity_2m?.[i] ?? null,
+      now:      nowT,
+      nowFeel:  nowF,
+      nowRH:    rhOK(cur.relative_humidity_2m),
+      code:     cur.weather_code,
+      then:     thenT,
+      thenFeel: thenF,
+      thenRH:   rhOK(h.relative_humidity_2m?.[i]),
       seed: `${lat.toFixed(2)},${lon.toFixed(2)},${localNow.toDateString()}`,
     };
     render();
   } catch (e) {
     if (quiet(e) || loadAC !== ac) return;
+    /* Reloading cannot help when the stored place is what broke us, so the
+       error screen also offers a way to pick a different one. */
     app.innerHTML = `<div class="msg fade">משהו השתבש 🤷<br><small style="opacity:.7">${esc(e.message)}</small><br><br>
-      <button class="geobtn" style="max-width:220px;margin:0 auto" onclick="location.reload()">נסה שוב</button></div>`;
+      <button class="geobtn" id="retry" style="max-width:220px;margin:0 auto 8px">נסה שוב</button>
+      <button class="geobtn" id="pickOther" style="max-width:220px;margin:0 auto">בחר מיקום אחר</button></div>`;
+    $('#retry').onclick = () => location.reload();
+    $('#pickOther').onclick = () => { ls.del(KEY); openSheet(); };
   }
 }
 
@@ -547,29 +620,41 @@ function share(){
 /* ============================================================
    7. Location picking
    ============================================================ */
+/* Runs during bootstrap, before the first load. It therefore must not throw
+   on a malformed stored list, or one bad write would take the whole startup
+   down with it. */
 function remember(p){
-  ls.set(KEY, p);
-  const list = ls.get(KEY_R, []).filter(x => x.name !== p.name);
-  list.unshift(p);
-  ls.set(KEY_R, list.slice(0, 5));
+  const at = normalizePlace(p);
+  if (!at) return;
+  ls.set(KEY, at);
+  const raw = ls.get(KEY_R, []);
+  const prev = (Array.isArray(raw) ? raw : []).map(normalizePlace).filter(Boolean);
+  ls.set(KEY_R, [at, ...prev.filter(x => x.name !== at.name)].slice(0, 5));
 }
 
 function drawRecent(){
-  const list = ls.get(KEY_R, []);
+  const raw = ls.get(KEY_R, []);
+  const arr = Array.isArray(raw) ? raw : [];
+  const list = arr.map(normalizePlace).filter(Boolean);
+  /* Rewrite whenever the stored value was not a clean array of valid places,
+     so a bad write is repaired once instead of being re-filtered forever. */
+  if (!Array.isArray(raw) || list.length !== arr.length) ls.set(KEY_R, list);
   $('#recentLbl').hidden = list.length === 0;
   $('#recent').innerHTML = list.map((p, i) =>
     `<button data-i="${i}">${esc(p.name)}</button>`).join('');
   $('#recent').querySelectorAll('button').forEach(b => b.onclick = () => {
-    choose(ls.get(KEY_R, [])[+b.dataset.i]);
+    choose(list[+b.dataset.i]);
   });
 }
 
 /* The single gate for picking a location. It advances gen, so any GPS
    lookup still in flight loses its right to paint the screen here. */
 function choose(p){
+  const at = normalizePlace(p);
+  if (!at) return;
   gen++;
   geoAC = stop(geoAC);
-  remember(p); closeSheet(); load(p);
+  remember(at); closeSheet(); load(at);
 }
 
 /* The dialog is modal: focus moves inside, cannot escape via Tab, and
@@ -586,9 +671,16 @@ function openSheet(){
   app.inert = true;               /* Take the background out of the keyboard and screen-reader path */
   $('#q').focus();
 }
+/* Closing the sheet — Cancel, Escape or the backdrop — must also retire a
+   geolocation answer that is still on its way. Otherwise the permission
+   prompt resolves after the user gave up and silently moves them somewhere
+   they did not ask for. choose() runs its own gen bump first, so the extra
+   one here cannot invalidate a selection already under way. */
 function closeSheet(){
   sheet.classList.remove('on');
   app.inert = false;
+  gen++;
+  geoAC = stop(geoAC);
   clearTimeout(timer);
   searchAC = stop(searchAC);
   $('#res').innerHTML=''; $('#q').value=''; $('#hint').textContent='';
@@ -672,11 +764,12 @@ function locate(explicit){
    time. */
 function fromURL(){
   const u = new URLSearchParams(location.search);
-  if (!u.has('lat') || !u.has('lon')) return null;
-  const lat = +u.get('lat'), lon = +u.get('lon');
-  if (!isFinite(lat) || !isFinite(lon)) return null;
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
-  return { lat, lon, name: (u.get('name') || 'המקום הזה').slice(0, 60) };
+  const lat = u.get('lat'), lon = u.get('lon');
+  /* URLSearchParams tells a missing parameter apart from an empty one, but
+     Number('') is 0 — so ?lat=&lon= would silently load the Gulf of Guinea
+     under whatever name the link supplied. */
+  if (!lat || !lat.trim() || !lon || !lon.trim()) return null;
+  return normalizePlace({ lat, lon, name: u.get('name') });
 }
 
 const shared = fromURL();
@@ -686,8 +779,11 @@ if (shared) {
   history.replaceState(null, '', location.pathname);   // clean up the address bar
   load(shared);
 } else {
-  const s = ls.get(KEY, null);
-  if (s) load(s);
+  const saved = normalizePlace(ls.get(KEY, null));
+  /* A stored value that no longer validates is dropped rather than retried
+     forever — otherwise one bad write bricks every future visit. */
+  if (!saved) ls.del(KEY);
+  if (saved) load(saved);
   else if (navigator.geolocation) { app.innerHTML = '<div class="msg"><div class="spin"></div>מאתר אותך…</div>'; locate(false); }
   else openSheet();
 }
