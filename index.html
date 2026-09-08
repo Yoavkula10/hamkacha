@@ -132,9 +132,13 @@
   .toast{
     position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px);
     background:#22262e; border:1px solid var(--line); color:var(--fg);
-    padding:11px 20px; border-radius:999px; font-size:14px; box-shadow:0 12px 40px rgba(0,0,0,.5);
+    padding:13px 20px; border-radius:16px; box-shadow:0 12px 40px rgba(0,0,0,.5);
     opacity:0; pointer-events:none; transition:.28s; z-index:40;
+    max-width:min(420px, calc(100vw - 36px)); text-align:center;
+    display:flex; flex-direction:column; gap:3px;
   }
+  .toast b{font-size:14.5px; font-weight:600}
+  .toast span{font-size:13px; font-weight:300; color:var(--muted); line-height:1.45}
   .toast.on{opacity:1; transform:translateX(-50%) translateY(0)}
 </style>
 </head>
@@ -290,9 +294,11 @@ async function getJSON(url){
   return r.json();
 }
 
-function toast(msg){
-  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2200);
+function toast(title, body){
+  const t = $('#toast');
+  t.innerHTML = `<b>${esc(title)}</b>` + (body ? `<span>${esc(body)}</span>` : '');
+  t.classList.add('on');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 3000);
 }
 
 /* ============================================================
@@ -450,14 +456,31 @@ function rollText(){
   return list[i];
 }
 
+/* גיבוי לדפדפנים ישנים שבהם navigator.clipboard לא זמין */
+function legacyCopy(str){
+  const ta = document.createElement('textarea');
+  ta.value = str;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;top:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch(e){}
+  ta.remove();
+  return ok;
+}
+
+/* מעתיק ישירות ללוח. במכוון בלי navigator.share — במחשב הוא פותח
+   את תפריט השיתוף של המערכת, וזה חיכוך מיותר במקום פעולה אחת. */
 function share(){
-  const url = shareURL(), text = rollText();
-  if (navigator.share) {
-    navigator.share({ title:'חם ככה', text, url }).catch(() => {});
+  const text = rollText(), payload = `${text}\n${shareURL()}`;
+  const done = () => toast('הועתק ✓', text);
+  const fail = () => toast('לא הצלחתי להעתיק', 'נסה שוב');
+
+  if (navigator.clipboard && isSecureContext) {
+    navigator.clipboard.writeText(payload).then(done, () => legacyCopy(payload) ? done() : fail());
   } else {
-    navigator.clipboard.writeText(`${text}\n${url}`)
-      .then(() => toast('הועתק ✓ ' + text))
-      .catch(() => toast('לא הצלחתי להעתיק'));
+    legacyCopy(payload) ? done() : fail();
   }
 }
 
