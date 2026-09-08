@@ -9,6 +9,12 @@
 <meta property="og:title" content="חם ככה">
 <meta property="og:description" content="היה חם ככה שנה שעברה? עכשיו תדע.">
 <meta property="og:type" content="website">
+<meta property="og:image" content="https://hamkacha.pages.dev/og.jpg">
+<meta property="og:url" content="https://hamkacha.pages.dev/">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="he_IL">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -406,14 +412,21 @@ function shareURL(){
 }
 
 /* פיתיון, לא דוח. בלי מספרים — המספרים הם הסיבה ללחוץ,
-   ואם הם כבר בהודעה אין סיבה להיכנס. עובד גם כשחם, גם כשקר וגם כשזהה. */
+   ואם הם כבר בהודעה אין סיבה להיכנס.
+   כל נוסח מעגן את עצמו במזג אוויר, אחרת ההודעה חסרת הקשר בוואטסאפ.
+   כולם ניטרליים בכוונה ("מזג האוויר" ולא "חם יותר"), כי התשובה
+   יכולה להיות גם "קר יותר" וגם "אותו דבר". */
 function shareTexts(){
   const c = DATA.name;
   return [
-    { k:'ענייני', t:`היה חם ככה שנה שעברה? הנה התשובה ל${c}.` },
-    { k:'מתלונן', t:`אני לא מדמיין את זה. תראה בעצמך.` },
-    { k:'מתגרה',  t:`טענת שזה לא היה ככה שנה שעברה. בוא נבדוק.` },
-    { k:'קצר',    t:`${c}, היום מול לפני שנה. תלחץ.` },
+    `היה חם ככה שנה שעברה? הנה התשובה ל${c}.`,
+    `מזג האוויר ב${c} היום, מול אותו יום בדיוק לפני שנה.`,
+    `אני לא מדמיין את מזג האוויר הזה. תראה בעצמך.`,
+    `טענת שמזג האוויר לא היה ככה שנה שעברה. בוא נבדוק.`,
+    `אותו מקום, אותו תאריך, אותה שעה — לפני שנה. תשווה.`,
+    `לא זיכרון של מזג אוויר. נתונים. ${c}, היום מול אשתקד.`,
+    `הטמפרטורה ב${c}: היום מול לפני שנה. תלחץ.`,
+    `שנינו אמרנו "כן אחי, מזג אוויר מטורף". בוא נראה אם צדקנו.`,
   ];
 }
 
@@ -425,7 +438,7 @@ function rollText(){
   do { i = Math.floor(Math.random() * list.length); }
   while (list.length > 1 && i === lastShare);
   lastShare = i;
-  return list[i].t;
+  return list[i];
 }
 
 function share(){
