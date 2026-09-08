@@ -1,0 +1,5 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(self), camera=(), microphone=(), payment=(), usb=()
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://api.bigdatacloud.net; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'

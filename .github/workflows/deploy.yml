@@ -18,7 +18,7 @@ jobs:
       - name: Stage site files
         run: |
           mkdir -p dist
-          cp index.html manifest.json sw.js icon-*.png og.jpg dist/
+          cp index.html manifest.json sw.js icon-*.png og.jpg _headers dist/
 
       - name: Publish
         uses: cloudflare/wrangler-action@v3

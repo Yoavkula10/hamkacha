@@ -256,6 +256,12 @@ const WMO = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️'
    3. עזרים
    ============================================================ */
 const $ = s => document.querySelector(s);
+
+/* כל מחרוזת ממקור חיצוני — שם עיר מה-API, פרמטר מהכתובת, הודעת שגיאה —
+   עוברת דרך כאן לפני שהיא נוגעת ב-innerHTML. בלי זה, קישור משותף
+   עם name=<img onerror=...> מריץ קוד זר על הדומיין שלנו. */
+const ESC = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
+const esc = v => String(v).replace(/[&<>"']/g, c => ESC[c]);
 const app = $('#app'), sheet = $('#sheet');
 const pad = n => String(n).padStart(2,'0');
 const KEY = 'hamkacha.place', KEY_R = 'hamkacha.recent';
@@ -325,7 +331,7 @@ async function load(place){
     };
     render();
   } catch (e) {
-    app.innerHTML = `<div class="msg fade">משהו השתבש 🤷<br><small style="opacity:.7">${e.message}</small><br><br>
+    app.innerHTML = `<div class="msg fade">משהו השתבש 🤷<br><small style="opacity:.7">${esc(e.message)}</small><br><br>
       <button class="geobtn" style="max-width:220px;margin:0 auto" onclick="location.reload()">נסה שוב</button></div>`;
   }
 }
@@ -351,7 +357,7 @@ function render(){
   app.innerHTML = `
     <div class="fade" style="display:flex;flex-direction:column;gap:20px">
       <div class="place">
-        <b>${d.name}</b><span>·</span>
+        <b>${esc(d.name)}</b><span>·</span>
         <span>${heDate(d.localNow)}, <span dir="ltr">${pad(d.hour)}:00</span></span>
         <button class="pill" id="chg">שנה מיקום</button>
       </div>
@@ -407,8 +413,11 @@ function render(){
    ============================================================ */
 function shareURL(){
   const d = DATA;
+  /* 2 ספרות ≈ 1.1 ק"מ. ב-4 ספרות (≈11 מטר) שיתוף ממיקום GPS
+     היה חושף את כתובת הבית. ממילא רשת ERA5 היא 25 ק"מ, אז זו
+     הייתה דיוק מדומה — הוויתור על הפרטיות היה בחינם. */
   return `${location.origin}${location.pathname}` +
-    `?lat=${d.lat.toFixed(4)}&lon=${d.lon.toFixed(4)}&name=${encodeURIComponent(d.name)}`;
+    `?lat=${d.lat.toFixed(2)}&lon=${d.lon.toFixed(2)}&name=${encodeURIComponent(d.name)}`;
 }
 
 /* פיתיון, לא דוח. בלי מספרים — המספרים הם הסיבה ללחוץ,
@@ -466,7 +475,7 @@ function drawRecent(){
   const list = ls.get(KEY_R, []);
   $('#recentLbl').hidden = list.length === 0;
   $('#recent').innerHTML = list.map((p, i) =>
-    `<button data-i="${i}">${p.name}</button>`).join('');
+    `<button data-i="${i}">${esc(p.name)}</button>`).join('');
   $('#recent').querySelectorAll('button').forEach(b => b.onclick = () => {
     const p = ls.get(KEY_R, [])[+b.dataset.i];
     remember(p); closeSheet(); load(p);
@@ -488,8 +497,8 @@ $('#q').oninput = e => {
       const r = await getJSON(
         `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(v)}&count=6&language=he`);
       $('#res').innerHTML = (r.results || []).map(x =>
-        `<button data-lat="${x.latitude}" data-lon="${x.longitude}" data-name="${x.name}">
-           ${x.name} <small>${[x.admin1, x.country].filter(Boolean).join(', ')}</small></button>`).join('')
+        `<button data-lat="${+x.latitude}" data-lon="${+x.longitude}" data-name="${esc(x.name)}">
+           ${esc(x.name)} <small>${esc([x.admin1, x.country].filter(Boolean).join(', '))}</small></button>`).join('')
         || '<div class="hint">לא נמצא. נסה איות אחר.</div>';
       $('#res').querySelectorAll('button').forEach(b => b.onclick = () => {
         const p = { lat:+b.dataset.lat, lon:+b.dataset.lon, name:b.dataset.name };
@@ -523,12 +532,20 @@ function locate(explicit){
 /* ============================================================
    8. התחלה — קישור משותף גובר על הכל
    ============================================================ */
-const url = new URLSearchParams(location.search);
-const shared = url.has('lat') && url.has('lon')
-  ? { lat:+url.get('lat'), lon:+url.get('lon'), name:url.get('name') || 'המקום הזה' }
-  : null;
+/* פרמטרים מקישור משותף הם קלט של תוקף פוטנציאלי — מאמתים טווח,
+   חותכים אורך, ומשאירים את הבריחה מ-HTML ל-esc() בשלב התצוגה. */
+function fromURL(){
+  const u = new URLSearchParams(location.search);
+  if (!u.has('lat') || !u.has('lon')) return null;
+  const lat = +u.get('lat'), lon = +u.get('lon');
+  if (!isFinite(lat) || !isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return { lat, lon, name: (u.get('name') || 'המקום הזה').slice(0, 60) };
+}
 
-if (shared && isFinite(shared.lat) && isFinite(shared.lon)) {
+const shared = fromURL();
+
+if (shared) {
   remember(shared);
   history.replaceState(null, '', location.pathname);   // ניקוי הכתובת
   load(shared);
