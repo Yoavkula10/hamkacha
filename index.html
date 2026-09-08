@@ -123,7 +123,6 @@
   .lbl{color:var(--muted); font-size:12.5px; font-weight:500; padding-inline-start:3px}
   .close{background:none; border:0; color:var(--muted); font:inherit; font-size:15px; cursor:pointer; padding:10px; margin-top:2px}
   .hint{color:var(--muted); font-size:13px; font-weight:300; text-align:center}
-
   .toast{
     position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px);
     background:#22262e; border:1px solid var(--line); color:var(--fg);
@@ -400,18 +399,42 @@ function render(){
 /* ============================================================
    6. שיתוף — הקישור פותח את אותו מקום בדיוק
    ============================================================ */
-function share(){
+function shareURL(){
   const d = DATA;
-  const url = `${location.origin}${location.pathname}` +
+  return `${location.origin}${location.pathname}` +
     `?lat=${d.lat.toFixed(4)}&lon=${d.lon.toFixed(4)}&name=${encodeURIComponent(d.name)}`;
-  const level = SCALE.find(s => (d.now - d.then) >= s.min);
-  const text = `${d.name}: ${fmt0(d.now)} עכשיו, ${fmt0(d.then)} לפני שנה. ${pick(level.texts, d.seed)}`;
+}
 
+/* פיתיון, לא דוח. בלי מספרים — המספרים הם הסיבה ללחוץ,
+   ואם הם כבר בהודעה אין סיבה להיכנס. עובד גם כשחם, גם כשקר וגם כשזהה. */
+function shareTexts(){
+  const c = DATA.name;
+  return [
+    { k:'ענייני', t:`היה חם ככה שנה שעברה? הנה התשובה ל${c}.` },
+    { k:'מתלונן', t:`אני לא מדמיין את זה. תראה בעצמך.` },
+    { k:'מתגרה',  t:`טענת שזה לא היה ככה שנה שעברה. בוא נבדוק.` },
+    { k:'קצר',    t:`${c}, היום מול לפני שנה. תלחץ.` },
+  ];
+}
+
+/* בכל לחיצה נוסח אחר, ואף פעם לא אותו אחד פעמיים ברצף */
+let lastShare = -1;
+function rollText(){
+  const list = shareTexts();
+  let i;
+  do { i = Math.floor(Math.random() * list.length); }
+  while (list.length > 1 && i === lastShare);
+  lastShare = i;
+  return list[i].t;
+}
+
+function share(){
+  const url = shareURL(), text = rollText();
   if (navigator.share) {
     navigator.share({ title:'חם ככה', text, url }).catch(() => {});
   } else {
     navigator.clipboard.writeText(`${text}\n${url}`)
-      .then(() => toast('הקישור הועתק ✓'))
+      .then(() => toast('הועתק ✓ ' + text))
       .catch(() => toast('לא הצלחתי להעתיק'));
   }
 }
