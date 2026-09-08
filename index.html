@@ -24,6 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<script defer src="https://cloud.umami.is/script.js" data-website-id="eaa96af5-454c-4743-a269-3db81d35413d"></script>
 <style>
   :root{
     --bg:#0f1115; --fg:#f2f4f8; --muted:#8b93a3; --line:rgba(255,255,255,.09);
@@ -264,6 +265,10 @@ const $ = s => document.querySelector(s);
 /* כל מחרוזת ממקור חיצוני — שם עיר מה-API, פרמטר מהכתובת, הודעת שגיאה —
    עוברת דרך כאן לפני שהיא נוגעת ב-innerHTML. בלי זה, קישור משותף
    עם name=<img onerror=...> מריץ קוד זר על הדומיין שלנו. */
+/* חוסמי פרסומות חוסמים את הסקריפט של Umami לעתים קרובות.
+   העטיפה מוודאת שהאפליקציה לא נשברת כשהוא לא נטען. */
+const track = (name, data) => { try { window.umami?.track(name, data); } catch(e){} };
+
 const ESC = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
 const esc = v => String(v).replace(/[&<>"']/g, c => ESC[c]);
 const app = $('#app'), sheet = $('#sheet');
@@ -453,7 +458,7 @@ function rollText(){
   do { i = Math.floor(Math.random() * list.length); }
   while (list.length > 1 && i === lastShare);
   lastShare = i;
-  return list[i];
+  return { text: list[i], i };
 }
 
 /* גיבוי לדפדפנים ישנים שבהם navigator.clipboard לא זמין */
@@ -473,9 +478,11 @@ function legacyCopy(str){
 /* מעתיק ישירות ללוח. במכוון בלי navigator.share — במחשב הוא פותח
    את תפריט השיתוף של המערכת, וזה חיכוך מיותר במקום פעולה אחת. */
 function share(){
-  const text = rollText(), payload = `${text}\n${shareURL()}`;
-  const done = () => toast('הועתק ✓', text);
-  const fail = () => toast('לא הצלחתי להעתיק', 'נסה שוב');
+  const { text, i } = rollText(), payload = `${text}\n${shareURL()}`;
+  track('share_click', { variant: i });
+  /* variant מאפשר לראות איזה נוסח באמת גורם לאנשים לשתף */
+  const done = () => { track('share_copied', { variant: i }); toast('הועתק ✓', text); };
+  const fail = () => { track('share_failed', { variant: i }); toast('לא הצלחתי להעתיק', 'נסה שוב'); };
 
   if (navigator.clipboard && isSecureContext) {
     navigator.clipboard.writeText(payload).then(done, () => legacyCopy(payload) ? done() : fail());
