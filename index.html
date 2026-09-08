@@ -103,6 +103,17 @@
 
   .foot{text-align:center; color:var(--muted); font-size:12.5px; font-weight:300; line-height:1.8}
   .foot a{color:var(--muted); text-decoration:underline; text-underline-offset:3px}
+  .credit{
+    direction:ltr;
+    margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .credit a{
+    display:inline-flex; align-items:center; gap:5px;
+    color:var(--fg); text-decoration:none; font-weight:500; opacity:.85; transition:.15s;
+  }
+  .credit a:hover{opacity:1; text-decoration:underline; text-underline-offset:3px}
+  .credit svg{width:13px; height:13px; fill:currentColor; flex:none}
   .foot .row{display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; margin-bottom:9px}
 
   .msg{text-align:center; padding:40px 0; color:var(--muted); font-size:16px; font-weight:300}
@@ -535,6 +546,13 @@ function render(){
         </div>
         אותו מקום, אותו תאריך, אותה שעה — רק שנה אחת אחורה.<br>
         נתונים: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> · ארכיון ECMWF
+        <div class="credit">
+          <span>created by</span>
+          <a href="https://www.linkedin.com/in/yoav-kula/" target="_blank" rel="noopener me">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.55V9h3.57v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/></svg>
+            Yoav Kula
+          </a>
+        </div>
       </div>
     </div>`;
 
