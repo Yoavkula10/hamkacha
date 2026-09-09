@@ -337,7 +337,13 @@ const ls = {
    a bad place is a place we do not have, not a crash. */
 function normalizePlace(v){
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
-  const lat = Number(v.lat), lon = Number(v.lon);
+  const coordinate = value => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const lat = coordinate(v.lat), lon = coordinate(v.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
   const name = typeof v.name === 'string' ? v.name.trim().slice(0, 60) : '';
@@ -355,12 +361,23 @@ const fmt1 = c => `${c.toFixed(1)}<span>°</span>`;
 const fmt0 = c => `${Math.round(c)}°`;
 const fmtD = d => `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d).toFixed(1)}°`;
 
-function lastYear(d){
-  const y = d.getFullYear() - 1, m = d.getMonth(), day = d.getDate();
-  const safe = (m === 1 && day === 29) ? 28 : day;   // Feb 29 does not exist every year
-  return `${y}-${pad(m+1)}-${pad(safe)}`;
+function parseWeatherLocalTime(value){
+  const match = typeof value === 'string' && value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return null;
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = +yearText, month = +monthText, day = +dayText, hour = +hourText, minute = +minuteText;
+  const check = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 ||
+      check.getUTCDate() !== day || check.getUTCHours() !== hour || check.getUTCMinutes() !== minute) return null;
+  return { year, month, day, hour, isoDate: `${yearText}-${monthText}-${dayText}` };
 }
-const heDate = d => d.toLocaleDateString('he-IL',{day:'numeric',month:'long'});
+function lastYear({ year, month, day }){
+  const safeDay = (month === 2 && day === 29) ? 28 : day;
+  return `${year - 1}-${pad(month)}-${pad(safeDay)}`;
+}
+const heDate = ({ year, month, day }) => new Intl.DateTimeFormat('he-IL', {
+  timeZone: 'UTC', day: 'numeric', month: 'long'
+}).format(new Date(Date.UTC(year, month - 1, day)));
 
 /* An AbortController only cancels a request once another request supersedes
    it. Nothing supersedes a stalled connection, so without a deadline the
@@ -431,13 +448,13 @@ async function load(place){
       `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code`, ac.signal);
 
     const cur = now && now.current;
-    const localNow = new Date(cur ? cur.time : NaN);
-    if (!cur || isNaN(localNow)) throw new Error('חסרים נתונים על עכשיו');
+    const localTime = parseWeatherLocalTime(cur && cur.time);
+    if (!cur || !localTime) throw new Error('חסרים נתונים על עכשיו');
     const nowT = num(cur.temperature_2m), nowF = num(cur.apparent_temperature);
     if (nowT == null || nowF == null) throw new Error('חסרים נתונים על עכשיו');
 
-    const hour = localNow.getHours();
-    const date = lastYear(localNow);
+    const { hour } = localTime;
+    const date = lastYear(localTime);
 
     const past = await getJSON(
       `https://archive-api.open-meteo.com/v1/archive?${q}` +
@@ -458,7 +475,7 @@ async function load(place){
     const rhOK = v => { const n = num(v); return (n != null && n >= 0 && n <= 100) ? n : null; };
 
     DATA = {
-      lat, lon, name, hour, localNow,
+      lat, lon, name, hour, localTime,
       now:      nowT,
       nowFeel:  nowF,
       nowRH:    rhOK(cur.relative_humidity_2m),
@@ -466,7 +483,7 @@ async function load(place){
       then:     thenT,
       thenFeel: thenF,
       thenRH:   rhOK(h.relative_humidity_2m?.[i]),
-      seed: `${lat.toFixed(2)},${lon.toFixed(2)},${localNow.toDateString()}`,
+      seed: `${lat.toFixed(2)},${lon.toFixed(2)},${localTime.isoDate}`,
     };
     render();
   } catch (e) {
@@ -503,7 +520,7 @@ function render(){
     <div class="fade" style="display:flex;flex-direction:column;gap:20px">
       <div class="place">
         <b>${esc(d.name)}</b><span>·</span>
-        <span>${heDate(d.localNow)}, <span dir="ltr">${pad(d.hour)}:00</span></span>
+        <span>${heDate(d.localTime)}, <span dir="ltr">${pad(d.hour)}:00</span></span>
         <button class="pill" id="chg">שנה מיקום</button>
       </div>
 
