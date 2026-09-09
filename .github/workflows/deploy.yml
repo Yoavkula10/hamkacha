@@ -13,13 +13,16 @@ concurrency:
 
 jobs:
   deploy:
+    # GitHub does not expose repository secrets to fork PRs. Skip their
+    # preview deploy instead of running the publisher with empty credentials.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    outputs:
+      preview-url: ${{ steps.publish.outputs.deployment-url }}
     permissions:
       contents: read
-      deployments: write
-      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Upload only the site files — never .git, the README, or repo config.
       - name: Stage site files
@@ -31,19 +34,25 @@ jobs:
       # other branch name as a preview, so one command covers both cases.
       - name: Publish
         id: publish
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=hamkacha --branch=${{ github.head_ref || github.ref_name }}
 
+  comment-preview:
+    if: github.event_name == 'pull_request' && needs.deploy.result == 'success'
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
       # One comment per PR, edited in place — a new comment on every push
       # would bury the conversation.
       - name: Comment the preview URL
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
-          URL: ${{ steps.publish.outputs.deployment-url }}
+          URL: ${{ needs.deploy.outputs.preview-url }}
         with:
           script: |
             const marker = '<!-- pages-preview -->';
