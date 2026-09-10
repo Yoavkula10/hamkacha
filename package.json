@@ -1,0 +1,8 @@
+{
+  "name": "hamkacha",
+  "private": true,
+  "scripts": {
+    "check": "node --check weather-domain.js && node --check sw.js && node scripts/verify-csp.cjs",
+    "test": "node --test"
+  }
+}
