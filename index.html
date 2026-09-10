@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-<script defer src="https://cloud.umami.is/script.js" data-website-id="eaa96af5-454c-4743-a269-3db81d35413d"></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="eaa96af5-454c-4743-a269-3db81d35413d" data-exclude-search="true" data-do-not-track="true"></script>
 <style>
   :root{
     --bg:#0f1115; --fg:#f2f4f8; --muted:#8b93a3; --line:rgba(255,255,255,.09);
@@ -165,6 +165,7 @@
     <button class="geobtn" id="useGeo">📍 השתמש במיקום שלי</button>
     <div class="lbl" id="recentLbl" hidden>אחרונים</div>
     <div class="recent" id="recent" role="group" aria-label="ערים אחרונות"></div>
+    <button class="close" id="clearHistory" hidden>נקה מיקומים שמורים</button>
     <div class="results" id="res" role="group" aria-label="תוצאות חיפוש" aria-live="polite"></div>
     <div class="hint" id="hint" role="status"></div>
     <button class="close" id="closeSheet">ביטול</button>
@@ -593,20 +594,28 @@ function share(){
 function remember(p){
   const at = normalizePlace(p);
   if (!at) return;
-  ls.set(KEY, at);
+  const stored = storedPlace(at);
+  ls.set(KEY, stored);
   const raw = ls.get(KEY_R, []);
   const prev = (Array.isArray(raw) ? raw : []).map(normalizePlace).filter(Boolean);
-  ls.set(KEY_R, [at, ...prev.filter(x => x.name !== at.name)].slice(0, 5));
+  ls.set(KEY_R, [stored, ...prev.filter(x => x.name !== stored.name)].slice(0, 5));
+}
+
+/* The weather request may use a precise GPS fix, but persistence only needs
+   the same grid-level precision as a shared link. */
+function storedPlace(place){
+  return { ...place, lat: +place.lat.toFixed(2), lon: +place.lon.toFixed(2) };
 }
 
 function drawRecent(){
   const raw = ls.get(KEY_R, []);
   const arr = Array.isArray(raw) ? raw : [];
-  const list = arr.map(normalizePlace).filter(Boolean);
+  const list = arr.map(normalizePlace).filter(Boolean).map(storedPlace);
   /* Rewrite whenever the stored value was not a clean array of valid places,
      so a bad write is repaired once instead of being re-filtered forever. */
-  if (!Array.isArray(raw) || list.length !== arr.length) ls.set(KEY_R, list);
+  if (!Array.isArray(raw) || JSON.stringify(raw) !== JSON.stringify(list)) ls.set(KEY_R, list);
   $('#recentLbl').hidden = list.length === 0;
+  $('#clearHistory').hidden = list.length === 0;
   $('#recent').innerHTML = list.map((p, i) =>
     `<button data-i="${i}">${esc(p.name)}</button>`).join('');
   $('#recent').querySelectorAll('button').forEach(b => b.onclick = () => {
@@ -656,6 +665,10 @@ function closeSheet(){
   lastFocus = null;
 }
 $('#closeSheet').onclick = closeSheet;
+$('#clearHistory').onclick = () => {
+  ls.del(KEY); ls.del(KEY_R); drawRecent();
+  toast('המיקומים נמחקו', 'לא נשמור אותם יותר במכשיר הזה.');
+};
 sheet.onclick = e => { if (e.target === sheet) closeSheet(); };
 
 addEventListener('keydown', e => {
@@ -746,11 +759,16 @@ if (shared) {
   history.replaceState(null, '', location.pathname);   // clean up the address bar
   load(shared);
 } else {
-  const saved = normalizePlace(ls.get(KEY, null));
+  const rawSaved = ls.get(KEY, null);
+  const saved = normalizePlace(rawSaved);
   /* A stored value that no longer validates is dropped rather than retried
      forever — otherwise one bad write bricks every future visit. */
   if (!saved) ls.del(KEY);
-  if (saved) load(saved);
+  if (saved) {
+    const stored = storedPlace(saved);
+    if (JSON.stringify(rawSaved) !== JSON.stringify(stored)) ls.set(KEY, stored);
+    load(stored);
+  }
   else if (navigator.geolocation) { app.innerHTML = '<div class="msg"><div class="spin"></div>מאתר אותך…</div>'; locate(false); }
   else openSheet();
 }
