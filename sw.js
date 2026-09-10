@@ -6,8 +6,8 @@
    never reaches a returning visitor unless the version here is bumped.
    activate deletes every cache under a different name, so the bump
    cleans up after itself. */
-const CACHE = 'hamkacha-v2';
-const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'hamkacha-v3';
+const SHELL = ['./', './index.html', './weather-domain.js', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

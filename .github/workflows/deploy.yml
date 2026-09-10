@@ -25,7 +25,7 @@ jobs:
       - name: Stage site files
         run: |
           mkdir -p dist
-          cp index.html manifest.json sw.js icon-*.png og.jpg _headers dist/
+          cp index.html weather-domain.js manifest.json sw.js icon-*.png og.jpg _headers dist/
 
       # Cloudflare Pages treats the production branch as production and every
       # other branch name as a preview, so one command covers both cases.
